@@ -22,9 +22,7 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var previewView: PreviewView
     private lateinit var boxOverlay: BoxOverlayView
-
-    private lateinit var ortEnv: OrtEnvironment
-    private lateinit var ortSession: OrtSession
+    private lateinit var poseOverlay: PoseOverlayView
 
     private val cameraExecutor = Executors.newSingleThreadExecutor()
 
@@ -33,7 +31,15 @@ class MainActivity : ComponentActivity() {
 
 //    private lateinit var debugImageView: ImageView
 
+    // --- init models --- //
+
+    private lateinit var ortEnv: OrtEnvironment
+
     private lateinit var yolo: YoloV8Processor
+    private lateinit var yoloSession: OrtSession
+
+    private lateinit var yoloPose: YoloPose11Processor
+    private lateinit var yoloPoseSession: OrtSession
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -50,13 +56,18 @@ class MainActivity : ComponentActivity() {
 
         previewView = findViewById(R.id.previewView)
         boxOverlay = findViewById(R.id.boxOverlay)
+        poseOverlay = findViewById(R.id.poseOverlay)
 
         // Initialize ONNX Runtime environment and session
         ortEnv = OrtEnvironment.getEnvironment()
-        val modelBytes = assets.open("yolov8n.onnx").readBytes()
-        ortSession = ortEnv.createSession(modelBytes)
 
-        yolo = YoloV8Processor(this, ortEnv, ortSession)
+        val yoloBytes = assets.open("yolov8n.onnx").readBytes()
+        yoloSession = ortEnv.createSession(yoloBytes)
+        yolo = YoloV8Processor(this, ortEnv, yoloSession)
+
+        val yoloPoseBytes = assets.open("yolo11n-pose.onnx").readBytes()
+        yoloPoseSession = ortEnv.createSession(yoloPoseBytes)
+        yoloPose = YoloPose11Processor(ortEnv, yoloPoseSession)
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             == PackageManager.PERMISSION_GRANTED
@@ -134,6 +145,9 @@ class MainActivity : ComponentActivity() {
 
             val detections = yolo.runInference(inputTensor)
 
+            val poses: List<YoloPose11Processor.PoseDetection> =  yoloPose.runInference(inputTensor)
+
+
             inputTensor.close()
 
             previewView.post {
@@ -160,6 +174,45 @@ class MainActivity : ComponentActivity() {
                 boxOverlay.boxes = mappedBoxes
                 boxOverlay.invalidate()
 
+// Filter and map poses with proper scaling
+//                val paddingX = 80f
+//                val scaleX = 480f / (640f - 2 * paddingX)
+//                val scaleY = 480f / 640f
+
+                val confidenceThreshold = 0.5f
+                val keypointConfidenceThreshold = 0.6f
+
+                poseOverlay.poses = poses
+                    .filter { it.score >= confidenceThreshold }
+                    .map { pose ->
+                        val (x0, y0, w, h) = pose.bbox
+
+                        val centerX = (x0 + w / 2f - paddingX) * scaleX
+                        val centerY = (y0 + h / 2f) * scaleY
+                        val mappedW = w * scaleX
+                        val mappedH = h * scaleY
+
+                        YoloPose11Processor.PoseDetection(
+                            keypoints = pose.keypoints
+                                .filter { it.conf >= keypointConfidenceThreshold }
+                                .map { kp ->
+                                    YoloPose11Processor.Keypoint(
+                                        x = (kp.x - paddingX) * scaleX,
+                                        y = kp.y * scaleY,
+                                        conf = kp.conf
+                                    )
+                                },
+                            score = pose.score,
+                            bbox = floatArrayOf(
+                                centerX - mappedW / 2f,
+                                centerY - mappedH / 2f,
+                                mappedW,
+                                mappedH
+                            )
+                        )
+                    }
+
+                poseOverlay.invalidate()
             }
 
         } catch (e: Exception) {
