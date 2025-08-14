@@ -47,10 +47,10 @@ class MainActivity : ComponentActivity() {
     private lateinit var yolo: YoloV8Processor
     private lateinit var yoloSession: OrtSession
 
-    private var screenW: Float = 0f
-    private var screenH: Float = 0f
-    private var camW: Float = 0f
-    private var camH: Float = 0f
+//    private var screenW: Float = 0f
+//    private var screenH: Float = 0f
+//    private var camW: Float = 0f
+//    private var camH: Float = 0f
 
     override fun onPause() {
         super.onPause()
@@ -119,10 +119,10 @@ class MainActivity : ComponentActivity() {
                 .build()
                 .also { it.setSurfaceProvider(previewView.surfaceProvider) }
 
-            if (screenW == 0f || screenH == 0f) {
-                screenW = previewView.width.toFloat()
-                screenH = previewView.height.toFloat()
-            }
+//            if (screenW == 0f || screenH == 0f) {
+//                screenW = previewView.width.toFloat()
+//                screenH = previewView.height.toFloat()
+//            }
 
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
@@ -131,10 +131,10 @@ class MainActivity : ComponentActivity() {
                 .build()
 
             imageAnalyzer.setAnalyzer(cameraExecutor) { imageProxy ->
-                if (camW == 0f || camH == 0f) {
-                    camW = imageProxy.width.toFloat()
-                    camH = imageProxy.height.toFloat()
-                }
+//                if (camW == 0f || camH == 0f) {
+//                    camW = imageProxy.width.toFloat()
+//                    camH = imageProxy.height.toFloat()
+//                }
 //                Log.d("CameraX", "Native camera resolution: ${nativeWidth}x${nativeHeight}")
 
                 processImage(imageProxy)
@@ -183,6 +183,12 @@ class MainActivity : ComponentActivity() {
             inputTensor.close()
 
             previewView.post {
+
+                val camW = imageProxy.width.toFloat()
+                val camH = imageProxy.height.toFloat()
+
+                val screenW = previewView.width.toFloat()
+                val screenH = previewView.height.toFloat()
 
                 val paddingX = (abs(screenW - camW))
                 val paddingY = (abs(screenH - camH))
