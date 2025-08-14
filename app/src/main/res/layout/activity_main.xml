@@ -8,14 +8,14 @@
 
     <androidx.camera.view.PreviewView
         android:id="@+id/previewView"
-        android:layout_width="640dp"
-        android:layout_height="360dp"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
         android:layout_gravity="center" />
 
     <com.example.kotlinyolo.BoxOverlayView
         android:id="@+id/boxOverlay"
-        android:layout_width="480dp"
-        android:layout_height="480dp"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
         android:layout_gravity="center"
         android:background="@android:color/transparent" />
 

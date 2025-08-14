@@ -19,7 +19,7 @@ class BoxOverlayView @JvmOverloads constructor(
 
     private val textPaint = Paint().apply {
         color = Color.BLACK
-        textSize = 12f
+        textSize = 16f
         isAntiAlias = true
     }
 

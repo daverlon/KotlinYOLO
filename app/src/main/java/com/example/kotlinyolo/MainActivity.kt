@@ -18,6 +18,7 @@ import android.widget.ImageView
 import java.io.ByteArrayOutputStream
 import java.nio.FloatBuffer
 import java.util.concurrent.Executors
+import kotlin.math.abs
 import kotlin.math.max
 
 class MainActivity : ComponentActivity() {
@@ -34,6 +35,11 @@ class MainActivity : ComponentActivity() {
     private lateinit var ortEnv: OrtEnvironment
     private lateinit var yolo: YoloV8Processor
     private lateinit var yoloSession: OrtSession
+
+    private var screenW: Float = 0f
+    private var screenH: Float = 0f
+    private var camW: Float = 0f
+    private var camH: Float = 0f
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,7 +60,6 @@ class MainActivity : ComponentActivity() {
 
         previewView = findViewById(R.id.previewView)
         boxOverlay = findViewById(R.id.boxOverlay)
-
 //        nnPreview = findViewById(R.id.nnPreview)
 
         ortEnv = OrtEnvironment.getEnvironment()
@@ -93,6 +98,11 @@ class MainActivity : ComponentActivity() {
                 .build()
                 .also { it.setSurfaceProvider(previewView.surfaceProvider) }
 
+            if (screenW == 0f || screenH == 0f) {
+                screenW = previewView.width.toFloat()
+                screenH = previewView.height.toFloat()
+            }
+
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
             val imageAnalyzer = ImageAnalysis.Builder()
@@ -100,11 +110,12 @@ class MainActivity : ComponentActivity() {
                 .build()
 
             imageAnalyzer.setAnalyzer(cameraExecutor) { imageProxy ->
-//                val nativeWidth = imageProxy.width
-//                val nativeHeight = imageProxy.height
+                if (camW == 0f || camH == 0f) {
+                    camW = imageProxy.width.toFloat()
+                    camH = imageProxy.height.toFloat()
+                }
 //                Log.d("CameraX", "Native camera resolution: ${nativeWidth}x${nativeHeight}")
 
-//                processImage(imageProxy, nativeWidth, nativeHeight)
                 processImage(imageProxy)
             }
 
@@ -131,25 +142,17 @@ class MainActivity : ComponentActivity() {
 
             previewView.post {
 
-//                val scaledPreview = Bitmap.createScaledBitmap(bitmap, 128, 128, true)
-//                nnPreview.setImageBitmap(scaledPreview)
+                val paddingX = (abs(screenW - camW))
+                val paddingY = (abs(screenH - camH))
 
-                // m400
-                // 640x360
-
-//                val paddingX = 80f
-//                val scaleX = 480f / (640f - 2 * paddingX)
-//                val scaleY = 480f / 640f
-
-                val paddingX = 80f
-                val scaleX = 480f / (640f - (2 * paddingX))
-                val scaleY = 480f / 640f
+                val scaleX = screenW / camW
+                val scaleY = screenH / camH
 
                 val mappedBoxes = detections.map { det ->
                     val centerX = (det.x - paddingX) * scaleX
-                    val centerY = det.y * scaleY
-                    val width = det.w * scaleX
-                    val height = det.h * scaleY
+                    val centerY = (det.y - paddingY * scaleY) * scaleY
+                    val width = det.w
+                    val height = det.h
 
                     BoxOverlayView.RenderedBox(
                         x = centerX - width / 2f,
@@ -200,7 +203,6 @@ class MainActivity : ComponentActivity() {
 
         return paddedBitmap
     }
-
 
     fun bitmapToOnnxTensor(env: OrtEnvironment, bitmap: Bitmap): OnnxTensor {
         val width = bitmap.width
