@@ -2,7 +2,6 @@ package com.example.kotlinyolo
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.graphics.*
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
@@ -14,12 +13,25 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import ai.onnxruntime.*
 import android.view.View
-import android.widget.ImageView
-import java.io.ByteArrayOutputStream
 import java.nio.FloatBuffer
 import java.util.concurrent.Executors
 import kotlin.math.abs
-import kotlin.math.max
+
+object YoloPreprocess {
+
+    init {
+        System.loadLibrary("yolo_compute_offload")
+    }
+
+    external fun yuvToRgbLetterboxFloat(
+        yPlane: ByteArray,
+        uPlane: ByteArray,
+        vPlane: ByteArray,
+        width: Int,
+        height: Int,
+        outTensor: FloatArray
+    )
+}
 
 class MainActivity : ComponentActivity() {
 
@@ -40,6 +52,16 @@ class MainActivity : ComponentActivity() {
     private var screenH: Float = 0f
     private var camW: Float = 0f
     private var camH: Float = 0f
+
+    override fun onPause() {
+        super.onPause()
+        finish()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        finish()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -128,15 +150,36 @@ class MainActivity : ComponentActivity() {
         }, ContextCompat.getMainExecutor(this))
     }
 
+    fun preprocessImage(image: ImageProxy): FloatArray {
+        val yPlane = ByteArray(image.planes[0].buffer.remaining())
+        val uPlane = ByteArray(image.planes[1].buffer.remaining())
+        val vPlane = ByteArray(image.planes[2].buffer.remaining())
+
+        image.planes[0].buffer.get(yPlane)
+        image.planes[1].buffer.get(uPlane)
+        image.planes[2].buffer.get(vPlane)
+
+        val floatArray = FloatArray(3 * 640 * 640)
+
+        YoloPreprocess.yuvToRgbLetterboxFloat(
+            yPlane, uPlane, vPlane,
+            image.width, image.height,
+            floatArray
+        )
+
+        return floatArray
+    }
+
     private fun processImage(imageProxy: ImageProxy) {
 //        Log.d("ImageProxy", "Image Proxy Size: ${imageProxy.width}x${imageProxy.height}")
         try {
-            val bitmap = yuvToRgbRotatedAndPadded(imageProxy) ?: run {
-                imageProxy.close()
-                return
-            }
+            val floatArray = preprocessImage(imageProxy)
+            val inputTensor = OnnxTensor.createTensor(
+                ortEnv,
+                FloatBuffer.wrap(floatArray),
+                longArrayOf(1, 3, 640, 640)
+            )
 
-            val inputTensor = bitmapToOnnxTensor(ortEnv, bitmap)
             val detections = yolo.runInference(inputTensor)
             inputTensor.close()
 
@@ -172,57 +215,5 @@ class MainActivity : ComponentActivity() {
         } finally {
             imageProxy.close()
         }
-    }
-
-    private fun yuvToRgbRotatedAndPadded(image: ImageProxy): Bitmap? {
-        val nv21 = yuv420888ToNv21(image)  // your existing function
-
-        val yuvImage = YuvImage(nv21, ImageFormat.NV21, image.width, image.height, null)
-        val out = ByteArrayOutputStream()
-        yuvImage.compressToJpeg(Rect(0, 0, image.width, image.height), 100, out)
-        val yuvBytes = out.toByteArray()
-        var bitmap = BitmapFactory.decodeByteArray(yuvBytes, 0, yuvBytes.size) ?: return null
-
-        // Rotate if necessary
-        val matrix = Matrix().apply { postRotate(180f) } // set to 90f if you need rotation
-        bitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-
-        // Letterbox to 640x640
-        val paddedBitmap = Bitmap.createBitmap(MODEL_INPUT_SIZE, MODEL_INPUT_SIZE, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(paddedBitmap)
-        canvas.drawColor(Color.BLACK)
-
-        val scale = MODEL_INPUT_SIZE / max(bitmap.width, bitmap.height).toFloat()
-        val newW = (bitmap.width * scale).toInt()
-        val newH = (bitmap.height * scale).toInt()
-        val left = (MODEL_INPUT_SIZE - newW) / 2
-        val top = (MODEL_INPUT_SIZE - newH) / 2
-
-        val resizedBitmap = Bitmap.createScaledBitmap(bitmap, newW, newH, true)
-        canvas.drawBitmap(resizedBitmap, left.toFloat(), top.toFloat(), null)
-
-        return paddedBitmap
-    }
-
-    fun bitmapToOnnxTensor(env: OrtEnvironment, bitmap: Bitmap): OnnxTensor {
-        val width = bitmap.width
-        val height = bitmap.height
-
-        val inputShape = longArrayOf(1, 3, height.toLong(), width.toLong())
-        val floatArray = FloatArray(3 * height * width)
-        val pixels = IntArray(width * height)
-        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
-
-        for (y in 0 until height) {
-            for (x in 0 until width) {
-                val pixel = pixels[y * width + x]
-
-                floatArray[0 * height * width + y * width + x] = ((pixel shr 16) and 0xFF) / 255f // R
-                floatArray[1 * height * width + y * width + x] = ((pixel shr 8) and 0xFF) / 255f  // G
-                floatArray[2 * height * width + y * width + x] = (pixel and 0xFF) / 255f           // B
-            }
-        }
-
-        return OnnxTensor.createTensor(env, FloatBuffer.wrap(floatArray), inputShape)
     }
 }

@@ -2,8 +2,20 @@ package com.example.kotlinyolo
 
 import android.content.Context
 import ai.onnxruntime.*
-import kotlin.math.max
-import kotlin.math.min
+
+object YoloPostprocess {
+
+    init {
+        System.loadLibrary("yolo_compute_offload")
+    }
+
+    external fun nms(
+        boxes: FloatArray,
+        numBoxes: Int,
+        iouThreshold: Float = 0.5f,
+        confThreshold: Float = 0.25f
+    ): FloatArray
+}
 
 class YoloV8Processor(
     context: Context,
@@ -28,6 +40,7 @@ class YoloV8Processor(
         val featureData = rawOutput[0]
         val numPredictions = featureData[0].size
 
+        // Extract detections
         val detections = mutableListOf<Detection>()
         val confidenceThreshold = 0.25f
 
@@ -52,50 +65,39 @@ class YoloV8Processor(
             }
         }
 
-        return nonMaxSuppression(detections, 0.5f)
-    }
-
-    private fun nonMaxSuppression(detections: List<Detection>, iouThreshold: Float): List<Detection> {
-        val sorted = detections.sortedByDescending { it.conf }
-        val selected = mutableListOf<Detection>()
-        val active = BooleanArray(sorted.size) { true }
-
-        for (i in sorted.indices) {
-            if (!active[i]) continue
-            val current = sorted[i]
-            selected.add(current)
-
-            for (j in i + 1 until sorted.size) {
-                if (!active[j]) continue
-                if (iou(current, sorted[j]) > iouThreshold) {
-                    active[j] = false
-                }
-            }
+        // Convert to flat array for C++ NMS: [x, y, w, h, conf, classId] * N
+        val rawBoxes = FloatArray(detections.size * 6)
+        for ((i, det) in detections.withIndex()) {
+            rawBoxes[i * 6 + 0] = det.x
+            rawBoxes[i * 6 + 1] = det.y
+            rawBoxes[i * 6 + 2] = det.w
+            rawBoxes[i * 6 + 3] = det.h
+            rawBoxes[i * 6 + 4] = det.conf
+            rawBoxes[i * 6 + 5] = det.classId.toFloat()
         }
-        return selected
-    }
 
-    private fun iou(a: Detection, b: Detection): Float {
-        val ax1 = a.x - a.w / 2
-        val ay1 = a.y - a.h / 2
-        val ax2 = a.x + a.w / 2
-        val ay2 = a.y + a.h / 2
+        // Call C++ NMS
+        val nmsResult = YoloPostprocess.nms(
+            rawBoxes,
+            detections.size,
+            iouThreshold = 0.5f,
+            confThreshold = confidenceThreshold
+        )
 
-        val bx1 = b.x - b.w / 2
-        val by1 = b.y - b.h / 2
-        val bx2 = b.x + b.w / 2
-        val by2 = b.y + b.h / 2
+        val finalBoxes = mutableListOf<Detection>()
+        for (i in nmsResult.indices step 6) {
+            finalBoxes.add(
+                Detection(
+                    x = nmsResult[i],
+                    y = nmsResult[i + 1],
+                    w = nmsResult[i + 2],
+                    h = nmsResult[i + 3],
+                    conf = nmsResult[i + 4],
+                    classId = nmsResult[i + 5].toInt()
+                )
+            )
+        }
 
-        val interLeft = max(ax1, bx1)
-        val interTop = max(ay1, by1)
-        val interRight = min(ax2, bx2)
-        val interBottom = min(ay2, by2)
-
-        val interWidth = max(0f, interRight - interLeft)
-        val interHeight = max(0f, interBottom - interTop)
-        val interArea = interWidth * interHeight
-
-        val unionArea = a.w * a.h + b.w * b.h - interArea
-        return if (unionArea > 0) interArea / unionArea else 0f
+        return finalBoxes
     }
 }

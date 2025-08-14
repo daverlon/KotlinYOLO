@@ -37,6 +37,13 @@ android {
     buildFeatures {
         compose = true
     }
+
+    externalNativeBuild {
+        cmake {
+            path = file("CMakeLists.txt")
+            // Optional: arguments = listOf("-DCMAKE_CXX_FLAGS=-std=c++17 -O3 -mfpu=neon")
+        }
+    }
 }
 
 dependencies {
