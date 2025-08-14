@@ -149,7 +149,7 @@ class MainActivity : ComponentActivity() {
                 val scaleY = screenH / camH
 
                 val mappedBoxes = detections.map { det ->
-                    val centerX = (det.x - paddingX) * scaleX
+                    val centerX = (det.x - paddingX * scaleX) * scaleX
                     val centerY = (det.y - paddingY * scaleY) * scaleY
                     val width = det.w
                     val height = det.h
