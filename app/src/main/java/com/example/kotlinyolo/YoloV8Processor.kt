@@ -18,8 +18,6 @@ object YoloPostprocess {
 }
 
 class YoloV8Processor(
-    context: Context,
-    private val ortEnv: OrtEnvironment,
     private val session: OrtSession
 ) {
 

@@ -42,7 +42,6 @@ class MainActivity : ComponentActivity() {
 
     private val cameraExecutor = Executors.newSingleThreadExecutor()
     private val REQUEST_CODE_CAMERA = 100
-    private val MODEL_INPUT_SIZE = 640
 
     private lateinit var ortEnv: OrtEnvironment
     private lateinit var yolo: YoloV8Processor
@@ -88,7 +87,7 @@ class MainActivity : ComponentActivity() {
 
         val yoloBytes = assets.open("yolo11n.onnx").readBytes()
         yoloSession = ortEnv.createSession(yoloBytes)
-        yolo = YoloV8Processor(this, ortEnv, yoloSession)
+        yolo = YoloV8Processor(yoloSession)
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             == PackageManager.PERMISSION_GRANTED) {
